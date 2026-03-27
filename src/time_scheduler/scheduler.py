@@ -1,0 +1,102 @@
+import threading
+import time
+from typing import Callable, Optional, List, Dict, Any
+from .task import Task
+
+class Scheduler:
+    def __init__(self):
+        self._tasks: Dict[str, Task] = {}
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    def add_task(
+        self,
+        name: str,
+        func: Callable,
+        run_on_startup: bool = False,
+        interval_seconds: Optional[int] = None,
+        run_at: Optional[float] = None,
+        args: tuple = (),
+        kwargs: dict = None,
+        on_start: Optional[Callable] = None,
+        on_end: Optional[Callable] = None
+    ) -> str:
+        """
+        新增排程任務
+        :return: 任務的唯一 ID
+        """
+        task = Task(
+            name=name,
+            func=func,
+            run_on_startup=run_on_startup,
+            interval_seconds=interval_seconds,
+            run_at=run_at,
+            args=args,
+            kwargs=kwargs,
+            on_start=on_start,
+            on_end=on_end
+        )
+        with self._lock:
+            self._tasks[task.id] = task
+        return task.id
+
+    def remove_task(self, task_id: str) -> bool:
+        """
+        刪除排程任務
+        :return: 成功回傳 True, 否則 False
+        """
+        with self._lock:
+            if task_id in self._tasks:
+                del self._tasks[task_id]
+                return True
+        return False
+
+    def get_tasks(self) -> List[Dict[str, Any]]:
+        """
+        取得目前所有任務的狀態
+        """
+        with self._lock:
+            return [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "next_run_time": t.next_run_time,
+                    "interval_seconds": t.interval_seconds
+                }
+                for t in self._tasks.values()
+            ]
+
+    def start(self):
+        """
+        啟動背景排程器
+        """
+        if self._running:
+            return
+            
+        self._running = True
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """
+        停止排程器
+        """
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _run_loop(self):
+        while self._running:
+            tasks_to_run = []
+            with self._lock:
+                for task in self._tasks.values():
+                    if task.should_run():
+                        tasks_to_run.append(task)
+            
+            # 使用新執行緒執行任務以避免阻塞其他排程
+            for task in tasks_to_run:
+                threading.Thread(target=task.execute, daemon=True).start()
+                
+            # 避免過度消耗 CPU
+            time.sleep(0.1)

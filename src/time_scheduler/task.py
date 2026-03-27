@@ -1,0 +1,79 @@
+import time
+import uuid
+from typing import Callable, Optional
+
+class Task:
+    def __init__(
+        self,
+        name: str,
+        func: Callable,
+        run_on_startup: bool = False,
+        interval_seconds: Optional[int] = None,
+        run_at: Optional[float] = None,
+        args: tuple = (),
+        kwargs: dict = None,
+        on_start: Optional[Callable] = None,
+        on_end: Optional[Callable] = None
+    ):
+        self.id = str(uuid.uuid4())
+        self.name = name
+        self.func = func
+        self.run_on_startup = run_on_startup
+        self.interval_seconds = interval_seconds
+        self.run_at = run_at
+        self.args = args or ()
+        self.kwargs = kwargs or {}
+        self.on_start = on_start
+        self.on_end = on_end
+        
+        self.has_run_startup = False
+        self.next_run_time = self._calculate_next_run()
+
+    def _calculate_next_run(self) -> Optional[float]:
+        now = time.time()
+        
+        if self.run_on_startup and not self.has_run_startup:
+            return now
+            
+        if self.run_at is not None:
+            if self.run_at > now:
+                return self.run_at
+            elif self.interval_seconds is None:
+                # 單次任務已過期且無重複間隔
+                return None
+                
+        if self.interval_seconds is not None:
+            return now + self.interval_seconds
+            
+        return None
+
+    def should_run(self) -> bool:
+        if self.next_run_time is None:
+            return False
+        return time.time() >= self.next_run_time
+
+    def execute(self):
+        """執行任務並計算下一次執行時間"""
+        if self.on_start:
+            try:
+                self.on_start(self.name)
+            except Exception as e:
+                print(f"Error in on_start callback for '{self.name}': {e}")
+                
+        try:
+            self.func(*self.args, **self.kwargs)
+        except Exception as e:
+            print(f"Error executing task '{self.name}': {e}")
+            
+        if self.on_end:
+            try:
+                self.on_end(self.name)
+            except Exception as e:
+                print(f"Error in on_end callback for '{self.name}': {e}")
+                
+        # 標記已執行過啟動任務
+        if self.run_on_startup and not self.has_run_startup:
+            self.has_run_startup = True
+            
+        # 重新計算下一次執行時間
+        self.next_run_time = self._calculate_next_run()
