@@ -1,4 +1,4 @@
-# TimeScheduler 2k7
+# TimeScheduler
 
 TimeScheduler 是一個輕量級的 Python 排程任務套件，專注於提供簡單、易用的 API 讓開發者能夠在專案中管理定時與背景執行任務，完全基於記憶體運作，無外部資料庫依賴。
 
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     # 4. 帶有回呼函式 (Callbacks) 的任務
     def on_task_start(name):
         print(f"[{time.strftime('%H:%M:%S')}] --- 任務 '{name}' 準備開始 ---")
-    
+
     def on_task_end(name):
         print(f"[{time.strftime('%H:%M:%S')}] --- 任務 '{name}' 執行完畢 ---")
 
