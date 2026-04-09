@@ -27,6 +27,10 @@ class Task:
         self.on_end = on_end
         
         self.has_run_startup = False
+        self.is_running = False
+        self.last_run_time: Optional[float] = None
+        self.run_count = 0
+        self.error_count = 0
         self.next_run_time = self._calculate_next_run()
 
     def _calculate_next_run(self) -> Optional[float]:
@@ -43,37 +47,54 @@ class Task:
                 return None
                 
         if self.interval_seconds is not None:
-            return now + self.interval_seconds
+            if self.last_run_time is None:
+                return now + self.interval_seconds
+            else:
+                next_run = self.last_run_time + self.interval_seconds
+                # 若延遲超過2倍間隔則重置到現在時間開始
+                if next_run + (self.interval_seconds * 2) < now:
+                    return now + self.interval_seconds
+                return next_run
             
         return None
 
     def should_run(self) -> bool:
+        if self.is_running:
+            return False
         if self.next_run_time is None:
             return False
         return time.time() >= self.next_run_time
 
     def execute(self):
         """執行任務並計算下一次執行時間"""
-        if self.on_start:
-            try:
-                self.on_start(self.name)
-            except Exception as e:
-                print(f"Error in on_start callback for '{self.name}': {e}")
-                
+        self.is_running = True
         try:
-            self.func(*self.args, **self.kwargs)
-        except Exception as e:
-            print(f"Error executing task '{self.name}': {e}")
-            
-        if self.on_end:
+            if self.on_start:
+                try:
+                    self.on_start(self.name)
+                except Exception as e:
+                    print(f"Error in on_start callback for '{self.name}': {e}")
+                    
             try:
-                self.on_end(self.name)
+                self.func(*self.args, **self.kwargs)
+                self.run_count += 1
             except Exception as e:
-                print(f"Error in on_end callback for '{self.name}': {e}")
+                self.error_count += 1
+                print(f"Error executing task '{self.name}': {e}")
                 
-        # 標記已執行過啟動任務
-        if self.run_on_startup and not self.has_run_startup:
-            self.has_run_startup = True
+            if self.on_end:
+                try:
+                    self.on_end(self.name)
+                except Exception as e:
+                    print(f"Error in on_end callback for '{self.name}': {e}")
+                    
+            # 標記已執行過啟動任務
+            if self.run_on_startup and not self.has_run_startup:
+                self.has_run_startup = True
             
-        # 重新計算下一次執行時間
-        self.next_run_time = self._calculate_next_run()
+            self.last_run_time = time.time()
+                
+            # 重新計算下一次執行時間
+            self.next_run_time = self._calculate_next_run()
+        finally:
+            self.is_running = False

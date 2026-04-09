@@ -62,7 +62,11 @@ class Scheduler:
                     "id": t.id,
                     "name": t.name,
                     "next_run_time": t.next_run_time,
-                    "interval_seconds": t.interval_seconds
+                    "interval_seconds": t.interval_seconds,
+                    "is_running": t.is_running,
+                    "last_run_time": t.last_run_time,
+                    "run_count": t.run_count,
+                    "error_count": t.error_count
                 }
                 for t in self._tasks.values()
             ]
@@ -89,10 +93,19 @@ class Scheduler:
     def _run_loop(self):
         while self._running:
             tasks_to_run = []
+            tasks_to_remove = []
+            
             with self._lock:
                 for task in self._tasks.values():
                     if task.should_run():
                         tasks_to_run.append(task)
+                    # 自動清理已完成的任務 (next_run_time is None 且非執行中)
+                    elif task.next_run_time is None and not task.is_running:
+                        tasks_to_remove.append(task.id)
+                
+                # 安全移除已完成任務
+                for task_id in tasks_to_remove:
+                    del self._tasks[task_id]
             
             # 使用新執行緒執行任務以避免阻塞其他排程
             for task in tasks_to_run:
