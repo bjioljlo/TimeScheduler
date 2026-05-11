@@ -1,7 +1,7 @@
 [project]
 name = "time_scheduler"
 version = "0.1.0"
-description = "Add your description here"
+description = "A lightweight, memory-based Python task scheduler"
 readme = "README.md"
 authors = [
     { name = "2887_林家豪", email = "bjioljlo@chinesgamer.net" }
