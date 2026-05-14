@@ -74,5 +74,77 @@ class TestScheduler(unittest.TestCase):
         time.sleep(1.2)
         self.assertEqual(self.executed_tasks.count("Interval"), 2)
 
+    # ==== 任務取消測試 ====
+
+    def test_cancel_pending_task(self):
+        """測試取消待處理任務"""
+        task_id = self.scheduler.add_task("CancelPending", self.dummy_task, args=("CancelPending",))
+        # 確認任務存在
+        self.assertEqual(len(self.scheduler.get_tasks()), 1)
+
+        # 取消待處理任務
+        result = self.scheduler.cancel_task(task_id)
+        self.assertTrue(result)
+        # 任務應從排程器中移除
+        self.assertEqual(len(self.scheduler.get_tasks()), 0)
+
+    def test_cancel_non_existent_task(self):
+        """測試取消不存在的任務"""
+        result = self.scheduler.cancel_task("non-existent-id")
+        self.assertFalse(result)
+
+    def test_cancel_running_task(self):
+        """測試取消執行中任務（合作式取消）"""
+        cancelled_flag = []
+
+        def long_running_task(cancel_token):
+            # 模擬長時間運作，並週期性檢查取消狀態
+            while not cancel_token.is_cancelled():
+                pass  # 等待取消
+            self.executed_tasks.append("CancelledRunning")
+            cancelled_flag.append(True)
+
+        task_id = self.scheduler.add_task("LongTask", long_running_task, run_on_startup=True)
+        self.scheduler.start()
+        # 給任務一些時間開始執行
+        time.sleep(0.3)
+
+        # 確認任務狀態為 running
+        tasks = self.scheduler.get_tasks()
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["status"], "running")
+
+        # 取消執行中任務
+        result = self.scheduler.cancel_task(task_id)
+        self.assertTrue(result)
+
+        # 等待任務確實取消
+        time.sleep(0.3)
+        self.assertIn("CancelledRunning", self.executed_tasks)
+        self.assertTrue(cancelled_flag)
+
+    def test_cancel_callback(self):
+        """測試取消回呼觸發"""
+        cancel_events = []
+
+        def on_cancel(name):
+            cancel_events.append(f"{name}_cancelled")
+
+        # 使用未來時間的任務確保它保持在 pending 狀態
+        future_time = time.time() + 10.0
+        task_id = self.scheduler.add_task(
+            "CancelCB", self.dummy_task,
+            args=("CancelCB",),
+            on_cancel=on_cancel,
+            run_at=future_time
+        )
+        # 不啟動排程器，任務保持在 pending 狀態
+        self.assertEqual(len(self.scheduler.get_tasks()), 1)
+
+        # 取消待處理任務
+        result = self.scheduler.cancel_task(task_id)
+        self.assertTrue(result)
+        self.assertIn("CancelCB_cancelled", cancel_events)
+
 if __name__ == "__main__":
     unittest.main()

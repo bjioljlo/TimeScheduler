@@ -8,7 +8,9 @@ TimeScheduler 是一個輕量級、基於記憶體 (memory-based) 的 Python 任
 - **定時執行 (Delayed Execution)** — 在未來的特定時間點執行
 - **重複執行 (Interval Execution)** — 每隔固定的時間間隔重複執行
 - **回呼函式 (Callbacks)** — 支援任務開始前 (`on_start`) 與任務結束後 (`on_end`) 的回呼
-- **任務管理** — 支援動態新增、刪除與查詢任務狀態
+- **任務取消 (Task Cancellation)** — 取消待處理或執行中的任務，並支援取消回呼 (`on_cancel`)
+- **合作式取消 (Cooperative Cancellation)** — 透過 `CancelToken` 讓任務安全地響應取消請求
+- **任務管理** — 支援動態新增、刪除、取消與查詢任務狀態
 - **執行緒安全** — 內部使用鎖機制 (`threading.Lock`) 保護共享資源
 - **自動清理** — 已完成的單次任務會自動從排程器中移除
 
@@ -135,6 +137,21 @@ scheduler = Scheduler()
 | `kwargs` | `dict \| None` | `None` | 傳遞給 `func` 的關鍵字參數 |
 | `on_start` | `Callable \| None` | `None` | 任務開始前的回呼函式，回傳任務名稱 |
 | `on_end` | `Callable \| None` | `None` | 任務結束後的回呼函式，回傳任務名稱 |
+| `on_cancel` | `Callable \| None` | `None` | 任務取消時的回呼函式，回傳任務名稱 |
+
+#### `cancel_task(task_id: str) -> bool`
+
+取消指定的排程任務。
+
+- 對於待處理（pending）的任務：直接從排程器中移除並觸發 `on_cancel` 回呼
+- 對於執行中（running）的任務：設定取消旗標，由任務的合作式取消機制處理
+- 回傳 `True` 表示取消成功，`False` 表示任務不存在或無法取消
+
+```python
+task_id = scheduler.add_task("my_task", my_func, run_on_startup=True)
+scheduler.cancel_task(task_id)  # True
+scheduler.cancel_task("non_existent_id")  # False
+```
 
 #### `remove_task(task_id: str) -> bool`
 
@@ -156,7 +173,7 @@ scheduler.remove_task("non_existent_id")  # False
 | `name` | `str` | 任務名稱 |
 | `next_run_time` | `float \| None` | 下次執行時間（Unix timestamp），若為 `None` 表示不再執行 |
 | `interval_seconds` | `int \| None` | 重複間隔秒數 |
-| `is_running` | `bool` | 任務是否正在執行中 |
+| `status` | `str` | 任務狀態：`pending`、`running`、`cancelled`、`completed` |
 | `last_run_time` | `float \| None` | 最後一次執行時間 |
 | `run_count` | `int` | 已執行次數 |
 | `error_count` | `int` | 執行錯誤次數 |
@@ -164,7 +181,7 @@ scheduler.remove_task("non_existent_id")  # False
 ```python
 tasks = scheduler.get_tasks()
 for task in tasks:
-    print(f"{task['name']}: 已執行 {task['run_count']} 次，錯誤 {task['error_count']} 次")
+    print(f"{task['name']}: 狀態={task['status']}，已執行 {task['run_count']} 次")
 ```
 
 #### `start()`
@@ -197,11 +214,60 @@ task = Task(
     args=("hello",),
     kwargs={"key": "value"},
     on_start=lambda name: print(f"{name} 開始"),
-    on_end=lambda name: print(f"{name} 結束")
+    on_end=lambda name: print(f"{name} 結束"),
+    on_cancel=lambda name: print(f"{name} 已取消")
 )
 
 print(task.id)         # 唯一識別碼 (UUID)
 print(task.run_count)  # 執行次數
+```
+
+### `CancelToken` 類別
+
+`CancelToken` 提供給任務函式檢查取消狀態，實現合作式取消。
+
+```python
+from time_scheduler.task import CancelToken
+
+def my_long_running_task(cancel_token: CancelToken):
+    while not cancel_token.is_cancelled():
+        # 執行工作...
+        pass
+    print("任務已被取消")
+```
+
+**注意：** 任務函式需要接受名為 `cancel_token` 的參數，排程器會自動傳入 `CancelToken` 實例。
+
+## 任務取消範例
+
+```python
+import time
+from time_scheduler import Scheduler
+
+scheduler = Scheduler()
+scheduler.start()
+
+# 合作式取消：長時間任務週期性檢查取消狀態
+def long_task(cancel_token):
+    step = 0
+    while not cancel_token.is_cancelled():
+        step += 1
+        print(f"執行步驟 {step}...")
+        time.sleep(0.5)
+    print("任務已安全停止")
+
+task_id = scheduler.add_task(
+    name="長時間任務",
+    func=long_task,
+    run_on_startup=True
+)
+
+time.sleep(2)
+print("正在取消任務...")
+scheduler.cancel_task(task_id)
+time.sleep(0.5)
+
+scheduler.stop()
 ```
 
 ## 任務管理範例
