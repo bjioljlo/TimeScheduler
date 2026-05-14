@@ -74,5 +74,103 @@ class TestScheduler(unittest.TestCase):
         time.sleep(1.2)
         self.assertEqual(self.executed_tasks.count("Interval"), 2)
 
+class TestTaskPriority(unittest.TestCase):
+    def setUp(self):
+        self.scheduler = Scheduler()
+        self.executed_tasks = []
+
+    def tearDown(self):
+        self.scheduler.stop()
+
+    def dummy_task(self, name):
+        self.executed_tasks.append(name)
+
+    def test_valid_priority_values(self):
+        """3.1 測試有效的優先級參數"""
+        from time_scheduler.task import Task
+
+        high_task = Task("high", self.dummy_task, priority="high", args=("high",))
+        med_task = Task("medium", self.dummy_task, priority="medium", args=("medium",))
+        low_task = Task("low", self.dummy_task, priority="low", args=("low",))
+
+        self.assertEqual(high_task.priority, "high")
+        self.assertEqual(med_task.priority, "medium")
+        self.assertEqual(low_task.priority, "low")
+
+    def test_invalid_priority_value(self):
+        """3.1 測試無效的優先級參數會拋出 ValueError"""
+        from time_scheduler.task import Task
+
+        with self.assertRaises(ValueError):
+            Task("invalid", self.dummy_task, priority="invalid", args=("invalid",))
+
+        with self.assertRaises(ValueError):
+            Task("empty", self.dummy_task, priority="", args=("empty",))
+
+    def test_default_priority(self):
+        """3.4 測試預設優先級為 medium"""
+        from time_scheduler.task import Task
+
+        task = Task("default", self.dummy_task, args=("default",))
+        self.assertEqual(task.priority, "medium")
+
+    def test_scheduler_default_priority(self):
+        """3.4 測試 add_task 預設優先級為 medium"""
+        task_id = self.scheduler.add_task("default", self.dummy_task, args=("default",))
+        tasks = self.scheduler.get_tasks()
+        task_info = next(t for t in tasks if t["id"] == task_id)
+        self.assertEqual(task_info["priority"], "medium")
+
+    def test_priority_execution_order(self):
+        """3.2 測試高優先級任務先執行"""
+        # 用 run_on_startup 讓所有任務立即執行
+        self.scheduler.add_task("low", self.dummy_task, run_on_startup=True,
+                                priority="low", args=("low",))
+        time.sleep(0.05)
+        self.scheduler.add_task("high", self.dummy_task, run_on_startup=True,
+                                priority="high", args=("high",))
+        time.sleep(0.05)
+        self.scheduler.add_task("medium", self.dummy_task, run_on_startup=True,
+                                priority="medium", args=("medium",))
+
+        self.scheduler.start()
+        time.sleep(0.5)
+
+        # 高優先級應先執行，然後 medium，最後 low
+        high_idx = self.executed_tasks.index("high") if "high" in self.executed_tasks else -1
+        med_idx = self.executed_tasks.index("medium") if "medium" in self.executed_tasks else -1
+        low_idx = self.executed_tasks.index("low") if "low" in self.executed_tasks else -1
+
+        self.assertGreater(high_idx, -1, "high priority task should execute")
+        self.assertGreater(med_idx, -1, "medium priority task should execute")
+        self.assertGreater(low_idx, -1, "low priority task should execute")
+
+        self.assertLess(high_idx, med_idx, "high priority should execute before medium")
+        self.assertLess(med_idx, low_idx, "medium priority should execute before low")
+
+    def test_same_priority_fifo_order(self):
+        """3.3 測試同優先級 FIFO 順序"""
+        # 依序加入三個 medium 優先級的任務
+        for i in range(3):
+            self.scheduler.add_task(f"task_{i}", self.dummy_task,
+                                    run_on_startup=True, priority="medium",
+                                    args=(f"task_{i}",))
+
+        self.scheduler.start()
+        time.sleep(0.5)
+
+        # 確認執行順序與加入順序相同
+        for i in range(3):
+            task_name = f"task_{i}"
+            self.assertIn(task_name, self.executed_tasks,
+                          f"{task_name} should be in executed tasks")
+
+        # 檢查 FIFO 順序
+        if len(self.executed_tasks) >= 3:
+            self.assertEqual(self.executed_tasks[0], "task_0")
+            self.assertEqual(self.executed_tasks[1], "task_1")
+            self.assertEqual(self.executed_tasks[2], "task_2")
+
+
 if __name__ == "__main__":
     unittest.main()

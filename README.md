@@ -9,6 +9,7 @@ TimeScheduler 是一個輕量級、基於記憶體 (memory-based) 的 Python 任
 - **重複執行 (Interval Execution)** — 每隔固定的時間間隔重複執行
 - **回呼函式 (Callbacks)** — 支援任務開始前 (`on_start`) 與任務結束後 (`on_end`) 的回呼
 - **任務管理** — 支援動態新增、刪除與查詢任務狀態
+- **任務優先級 (Task Priority)** — 支援 "high"、"medium"、"low" 三種優先級，高優先級任務優先執行
 - **執行緒安全** — 內部使用鎖機制 (`threading.Lock`) 保護共享資源
 - **自動清理** — 已完成的單次任務會自動從排程器中移除
 
@@ -129,6 +130,7 @@ scheduler = Scheduler()
 | `name` | `str` | — | 任務名稱（僅供識別用） |
 | `func` | `Callable` | — | 要執行的函式 |
 | `run_on_startup` | `bool` | `False` | 是否在排程器啟動後立即執行一次 |
+| `priority` | `Literal["high", "medium", "low"]` | `"medium"` | 任務優先級，高優先級先執行 |
 | `run_at` | `float \| None` | `None` | 指定未來執行時間（Unix timestamp） |
 | `interval_seconds` | `int \| None` | `None` | 重複執行的間隔秒數 |
 | `args` | `tuple` | `()` | 傳遞給 `func` 的位置參數 |
@@ -154,6 +156,7 @@ scheduler.remove_task("non_existent_id")  # False
 |------|------|------|
 | `id` | `str` | 任務唯一 ID |
 | `name` | `str` | 任務名稱 |
+| `priority` | `str` | 任務優先級（"high", "medium", "low"） |
 | `next_run_time` | `float \| None` | 下次執行時間（Unix timestamp），若為 `None` 表示不再執行 |
 | `interval_seconds` | `int \| None` | 重複間隔秒數 |
 | `is_running` | `bool` | 任務是否正在執行中 |
