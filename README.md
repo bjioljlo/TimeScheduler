@@ -8,6 +8,7 @@ TimeScheduler 是一個輕量級、基於記憶體 (memory-based) 的 Python 任
 - **定時執行 (Delayed Execution)** — 在未來的特定時間點執行
 - **重複執行 (Interval Execution)** — 每隔固定的時間間隔重複執行
 - **回呼函式 (Callbacks)** — 支援任務開始前 (`on_start`) 與任務結束後 (`on_end`) 的回呼
+- **錯誤處理與重試 (Error Handling & Retry)** — 任務失敗時自動重試，並支援最終失敗回呼
 - **任務管理** — 支援動態新增、刪除與查詢任務狀態
 - **執行緒安全** — 內部使用鎖機制 (`threading.Lock`) 保護共享資源
 - **自動清理** — 已完成的單次任務會自動從排程器中移除
@@ -99,6 +100,26 @@ if __name__ == "__main__":
         kwargs={"greeting": "Hello", "name": "TimeScheduler"}
     )
 
+    # 6. 錯誤處理與重試示範
+    def unreliable_task(attempt_msg):
+        import random
+        if random.random() < 0.7:  # 70% 機率失敗
+            raise Exception("模擬網路錯誤")
+        print(f"[{time.strftime('%H:%M:%S')}] {attempt_msg}")
+
+    def on_failure(name):
+        print(f"[{time.strftime('%H:%M:%S')}] 任務 '{name}' 重試失敗，已放棄")
+
+    scheduler.add_task(
+        name="重試任務",
+        func=unreliable_task,
+        interval_seconds=5,
+        args=("網路請求成功！",),
+        max_retries=3,
+        retry_delay=1.0,
+        on_failure=on_failure
+    )
+
     print("排程器已啟動，按 Ctrl+C 結束。")
     try:
         while True:
@@ -135,6 +156,9 @@ scheduler = Scheduler()
 | `kwargs` | `dict \| None` | `None` | 傳遞給 `func` 的關鍵字參數 |
 | `on_start` | `Callable \| None` | `None` | 任務開始前的回呼函式，回傳任務名稱 |
 | `on_end` | `Callable \| None` | `None` | 任務結束後的回呼函式，回傳任務名稱 |
+| `max_retries` | `int` | `0` | 任務失敗時的最大重試次數 |
+| `retry_delay` | `float` | `0.0` | 重試間隔秒數 |
+| `on_failure` | `Callable \| None` | `None` | 重試耗盡後的回呼函式，回傳任務名稱 |
 
 #### `remove_task(task_id: str) -> bool`
 

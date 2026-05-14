@@ -74,5 +74,64 @@ class TestScheduler(unittest.TestCase):
         time.sleep(1.2)
         self.assertEqual(self.executed_tasks.count("Interval"), 2)
 
+    def test_retry_mechanism_no_retry(self):
+        """測試無重試：任務失敗後不重試"""
+        failure_events = []
+        def failing_task(name):
+            raise Exception("Task failed")
+        def on_failure(name):
+            failure_events.append(name)
+
+        self.scheduler.add_task("NoRetry", failing_task, run_on_startup=True, args=("NoRetry",), max_retries=0, on_failure=on_failure)
+        self.scheduler.start()
+        time.sleep(0.5)
+        self.assertIn("NoRetry", failure_events)
+
+    def test_retry_mechanism_success_after_retry(self):
+        """測試重試成功"""
+        attempts = []
+        def unstable_task(name):
+            attempts.append(name)
+            if len(attempts) < 2:
+                raise Exception("Temporary failure")
+            self.executed_tasks.append(name)  # 成功時記錄
+
+        self.scheduler.add_task("RetrySuccess", unstable_task, run_on_startup=True, args=("RetrySuccess",), max_retries=3, retry_delay=0.1)
+        self.scheduler.start()
+        time.sleep(0.5)
+        self.assertEqual(len(attempts), 2)  # 失敗一次，重試成功
+        self.assertIn("RetrySuccess", self.executed_tasks)
+
+    def test_retry_mechanism_failure_after_max_retries(self):
+        """測試重試失敗：耗盡重試後觸發 on_failure"""
+        attempts = []
+        failure_events = []
+        def always_failing_task(name):
+            attempts.append(name)
+            raise Exception("Always fails")
+        def on_failure(name):
+            failure_events.append(name)
+
+        self.scheduler.add_task("RetryFail", always_failing_task, run_on_startup=True, args=("RetryFail",), max_retries=2, retry_delay=0.1, on_failure=on_failure)
+        self.scheduler.start()
+        time.sleep(0.5)
+        self.assertEqual(len(attempts), 3)  # 初始 + 2次重試
+        self.assertIn("RetryFail", failure_events)
+
+    def test_retry_delay(self):
+        """測試重試延遲"""
+        start_time = time.time()
+        attempts = []
+        def failing_task(name):
+            attempts.append(time.time() - start_time)
+            raise Exception("Fails")
+
+        self.scheduler.add_task("RetryDelay", failing_task, run_on_startup=True, args=("RetryDelay",), max_retries=1, retry_delay=0.2, on_failure=lambda n: None)
+        self.scheduler.start()
+        time.sleep(0.5)
+        self.assertGreaterEqual(len(attempts), 2)
+        if len(attempts) >= 2:
+            self.assertGreaterEqual(attempts[1] - attempts[0], 0.2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,7 +20,10 @@ class Scheduler:
         args: tuple = (),
         kwargs: dict = None,
         on_start: Optional[Callable] = None,
-        on_end: Optional[Callable] = None
+        on_end: Optional[Callable] = None,
+        max_retries: int = 0,
+        retry_delay: float = 0.0,
+        on_failure: Optional[Callable] = None
     ) -> str:
         """
         新增排程任務
@@ -35,7 +38,10 @@ class Scheduler:
             args=args,
             kwargs=kwargs,
             on_start=on_start,
-            on_end=on_end
+            on_end=on_end,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            on_failure=on_failure
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -77,7 +83,7 @@ class Scheduler:
         """
         if self._running:
             return
-            
+
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -94,7 +100,7 @@ class Scheduler:
         while self._running:
             tasks_to_run = []
             tasks_to_remove = []
-            
+
             with self._lock:
                 for task in self._tasks.values():
                     if task.should_run():
@@ -102,14 +108,14 @@ class Scheduler:
                     # 自動清理已完成的任務 (next_run_time is None 且非執行中)
                     elif task.next_run_time is None and not task.is_running:
                         tasks_to_remove.append(task.id)
-                
+
                 # 安全移除已完成任務
                 for task_id in tasks_to_remove:
                     del self._tasks[task_id]
-            
+
             # 使用新執行緒執行任務以避免阻塞其他排程
             for task in tasks_to_run:
                 threading.Thread(target=task.execute, daemon=True).start()
-                
+
             # 避免過度消耗 CPU
             time.sleep(0.1)
